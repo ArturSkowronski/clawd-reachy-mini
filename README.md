@@ -4,6 +4,13 @@ This project provides a voice-controlled interface for the [Reachy Mini](https:/
 
 It allows Reachy Mini to function as an embodied agent that can see, hear, speak, and move based on intelligence provided by OpenClaw.
 
+## About OpenClaw & Clawd
+
+**OpenClaw** (formerly known as *Clawdbot*) is an open-source autonomous AI personal assistant project designed to automate complex digital tasks and maintain persistent context.
+
+*   **Clawd** refers to the specific persona or instance of the AI assistant (often powered by Anthropic's Claude models) that this robot interface is designed to embody.
+*   **The Goal**: By connecting Reachy Mini to OpenClaw, we extend the assistant's capabilities from the digital realm (managing emails, calendars, code) into the physical world (gestures, vision, physical presence).
+
 ## Architecture
 
 The system operates on a client-server architecture:
