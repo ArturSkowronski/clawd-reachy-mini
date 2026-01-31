@@ -34,9 +34,7 @@ jobs:
 
     - name: Lint with Ruff
       run: |
-        # Stop the build if there are Python syntax errors or undefined names
-        ruff check . --select=E9,F63,F7,F82 --show-source
-        # Default linting (exit non-zero on error)
+        pip install ruff
         ruff check .
 
     - name: Install dependencies (Action Skill)
