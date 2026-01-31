@@ -36,6 +36,7 @@ class Config:
     wake_word: str | None = None  # None = always listening, or set e.g. "hey reachy"
     play_emotions: bool = True  # React with emotions during conversation
     idle_animations: bool = True  # Play idle animations when waiting
+    standalone_mode: bool = False  # Run without OpenClaw Gateway
 
     # Paths
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".clawd-reachy-mini" / "cache")

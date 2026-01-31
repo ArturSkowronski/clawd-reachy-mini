@@ -89,6 +89,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable idle animations",
     )
+    parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help="Run in standalone mode without OpenClaw Gateway (for testing robot)",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run a quick demo of robot capabilities",
+    )
 
     return parser.parse_args()
 
@@ -109,8 +119,84 @@ def create_config(args: argparse.Namespace) -> Config:
     config.wake_word = args.wake_word
     config.play_emotions = not args.no_emotions
     config.idle_animations = not args.no_idle
+    config.standalone_mode = args.standalone
 
     return config
+
+
+async def run_demo() -> int:
+    """Run a quick demo of robot capabilities."""
+    logging.info("Starting Reachy Mini demo...")
+
+    try:
+        from reachy_mini import ReachyMini
+        from reachy_mini.utils import create_head_pose
+    except ImportError:
+        logging.error("reachy-mini package not installed")
+        return 1
+
+    reachy = None
+    try:
+        reachy = ReachyMini()
+        reachy.__enter__()
+        logging.info("Connected to Reachy Mini!")
+
+        # Wake up the robot
+        logging.info("Waking up robot...")
+        reachy.wake_up()
+        await asyncio.sleep(1.0)
+
+        # Move head - nod yes
+        logging.info("Moving head - nodding yes...")
+        for _ in range(2):
+            head_pose = create_head_pose(roll=0, pitch=10, degrees=True)
+            reachy.goto_target(head=head_pose, duration=0.3)
+            await asyncio.sleep(0.4)
+            head_pose = create_head_pose(roll=0, pitch=-10, degrees=True)
+            reachy.goto_target(head=head_pose, duration=0.3)
+            await asyncio.sleep(0.4)
+
+        # Return to center
+        head_pose = create_head_pose(roll=0, pitch=0, degrees=True)
+        reachy.goto_target(head=head_pose, duration=0.5)
+        await asyncio.sleep(0.6)
+
+        # Move head - shake no
+        logging.info("Moving head - shaking no...")
+        for _ in range(2):
+            head_pose = create_head_pose(roll=10, pitch=0, degrees=True)
+            reachy.goto_target(head=head_pose, duration=0.3)
+            await asyncio.sleep(0.4)
+            head_pose = create_head_pose(roll=-10, pitch=0, degrees=True)
+            reachy.goto_target(head=head_pose, duration=0.3)
+            await asyncio.sleep(0.4)
+
+        # Return to center
+        head_pose = create_head_pose(roll=0, pitch=0, degrees=True)
+        reachy.goto_target(head=head_pose, duration=0.5)
+        await asyncio.sleep(0.6)
+
+        # Move antennas (takes a list: [left, right])
+        logging.info("Moving antennas...")
+        reachy.set_target_antenna_joint_positions([30.0, -30.0])
+        await asyncio.sleep(0.5)
+        reachy.set_target_antenna_joint_positions([-30.0, 30.0])
+        await asyncio.sleep(0.5)
+        reachy.set_target_antenna_joint_positions([0.0, 0.0])
+        await asyncio.sleep(0.5)
+
+        logging.info("Demo completed successfully!")
+
+    except Exception as e:
+        logging.error(f"Demo failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    finally:
+        if reachy:
+            reachy.__exit__(None, None, None)
+
+    return 0
 
 
 async def async_main(config: Config) -> int:
@@ -159,10 +245,20 @@ def main() -> None:
     args = parse_args()
     setup_logging(args.verbose)
 
+    # Handle demo mode
+    if args.demo:
+        logging.info("Running Reachy Mini demo")
+        exit_code = asyncio.run(run_demo())
+        sys.exit(exit_code)
+
     config = create_config(args)
 
-    logging.info("Starting Reachy Mini OpenClaw interface")
-    logging.info(f"Gateway: {config.gateway_url}")
+    if config.standalone_mode:
+        logging.info("Starting Reachy Mini in standalone mode (no gateway)")
+    else:
+        logging.info("Starting Reachy Mini OpenClaw interface")
+        logging.info(f"Gateway: {config.gateway_url}")
+
     logging.info(f"STT: {config.stt_backend} ({config.whisper_model})")
     if config.wake_word:
         logging.info(f"Wake word: {config.wake_word}")

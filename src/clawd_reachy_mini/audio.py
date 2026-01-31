@@ -57,13 +57,19 @@ class AudioCapture:
         max_silence_frames = int(self.config.silence_duration * self.config.sample_rate / 1024)
         max_frames = int(self.config.max_recording_duration * self.config.sample_rate / 1024)
         speech_detected = False
+        energy_samples = []
 
         try:
+            # Start recording on Reachy Mini if available
+            if self.reachy and hasattr(self.reachy, "media"):
+                self.reachy.media.start_recording()
+                logger.debug("Started Reachy Mini audio recording")
+
             while self._running and len(frames) < max_frames:
-                # Get audio from Reachy Mini's microphone
-                if self.reachy and hasattr(self.reachy, "microphone"):
+                # Get audio from Reachy Mini's media manager
+                if self.reachy and hasattr(self.reachy, "media"):
                     chunk = await asyncio.to_thread(
-                        self.reachy.microphone.read, 1024
+                        self.reachy.media.get_audio_sample
                     )
                 else:
                     # Fallback: use sounddevice for local mic
@@ -79,8 +85,16 @@ class AudioCapture:
 
                 # Check for speech/silence
                 energy = np.abs(chunk).mean()
+                energy_samples.append(energy)
+
+                # Log energy level periodically (every ~1 second)
+                if len(energy_samples) % 16 == 0:
+                    avg_energy = np.mean(energy_samples[-16:])
+                    logger.debug(f"Audio energy: {avg_energy:.4f} (threshold: {self.config.silence_threshold})")
 
                 if energy > self.config.silence_threshold:
+                    if not speech_detected:
+                        logger.info("🗣️ Speech detected!")
                     speech_detected = True
                     silence_frames = 0
                     frames.append(chunk)
@@ -90,6 +104,7 @@ class AudioCapture:
 
                     if silence_frames >= max_silence_frames:
                         # End of utterance
+                        logger.info("⏹️ End of speech detected")
                         break
 
                 await asyncio.sleep(0.001)  # Small yield
@@ -97,6 +112,13 @@ class AudioCapture:
         except Exception as e:
             logger.error(f"Error capturing audio: {e}")
             return None
+        finally:
+            # Stop recording on Reachy Mini
+            if self.reachy and hasattr(self.reachy, "media"):
+                try:
+                    self.reachy.media.stop_recording()
+                except Exception:
+                    pass
 
         if not frames or not speech_detected:
             return None

@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 class STTBackend(ABC):
     """Abstract base class for speech-to-text backends."""
 
+    def preload(self) -> None:
+        """Preload the model to avoid delay on first transcription."""
+        pass
+
     @abstractmethod
     def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> str:
         """Transcribe audio to text."""
@@ -33,6 +37,10 @@ class WhisperSTT(STTBackend):
     def __init__(self, model_name: str = "base"):
         self.model_name = model_name
         self._model = None
+
+    def preload(self) -> None:
+        """Preload the Whisper model."""
+        self._load_model()
 
     def _load_model(self):
         if self._model is None:
@@ -65,6 +73,10 @@ class FasterWhisperSTT(STTBackend):
     def __init__(self, model_name: str = "base"):
         self.model_name = model_name
         self._model = None
+
+    def preload(self) -> None:
+        """Preload the Faster-Whisper model."""
+        self._load_model()
 
     def _load_model(self):
         if self._model is None:

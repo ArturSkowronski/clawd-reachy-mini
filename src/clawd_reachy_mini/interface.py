@@ -61,15 +61,22 @@ class ReachyInterface:
         await self._connect_reachy()
 
         # Initialize components
+        logger.info("🧠 Loading speech recognition model...")
         self._stt = create_stt_backend(self.config)
+        await asyncio.to_thread(self._stt.preload)
+        logger.info("✅ Speech recognition ready")
+
         self._audio = AudioCapture(self.config, self._reachy)
-        self._gateway = GatewayClient(self.config)
 
         if self.config.wake_word:
             self._wake_detector = WakeWordDetector(self.config.wake_word)
 
-        # Connect to OpenClaw Gateway
-        await self._gateway.connect()
+        # Connect to OpenClaw Gateway (unless in standalone mode)
+        if not self.config.standalone_mode:
+            self._gateway = GatewayClient(self.config)
+            await self._gateway.connect()
+        else:
+            logger.info("Running in standalone mode - no gateway connection")
 
         # Start audio capture
         await self._audio.start()
@@ -77,7 +84,13 @@ class ReachyInterface:
         self._running = True
         self.state = InterfaceState.IDLE
 
-        logger.info("Reachy Mini interface started")
+        logger.info("✨ Reachy Mini interface started")
+        logger.info("=" * 50)
+        if self.config.wake_word:
+            logger.info(f"Say \"{self.config.wake_word}\" to activate")
+        else:
+            logger.info("Speak anytime - I'm always listening!")
+        logger.info("=" * 50)
 
         # Play startup animation
         if self.config.play_emotions:
@@ -135,6 +148,7 @@ class ReachyInterface:
         """Handle one turn of conversation."""
         # Listen for speech
         self.state = InterfaceState.LISTENING
+        logger.info("🎤 Listening... (speak now)")
         audio = await self._audio.capture_utterance()
 
         if audio is None:
@@ -143,6 +157,7 @@ class ReachyInterface:
 
         # Transcribe
         self.state = InterfaceState.PROCESSING
+        logger.info("🔄 Processing speech...")
         try:
             text = await asyncio.to_thread(
                 self._stt.transcribe, audio, self.config.sample_rate
@@ -152,9 +167,10 @@ class ReachyInterface:
             return
 
         if not text or not text.strip():
+            logger.info("(no speech detected)")
             return
 
-        logger.info(f"User: {text}")
+        logger.info(f"📝 You said: \"{text}\"")
 
         # Check wake word if configured
         if self._wake_detector and not self._conversation_active:
@@ -171,23 +187,31 @@ class ReachyInterface:
         if self.config.play_emotions:
             await self._play_emotion("thinking")
 
-        # Send to OpenClaw and get response
-        try:
-            response = await self._gateway.send_message(text)
-        except Exception as e:
-            logger.error(f"Gateway error: {e}")
-            if self.config.play_emotions:
-                await self._play_emotion("sad")
-            return
+        # Get response - either from gateway or standalone echo
+        if self.config.standalone_mode:
+            # In standalone mode, just echo back what was heard
+            response = f"I heard you say: {text}"
+        else:
+            # Send to OpenClaw and get response
+            logger.info("🤖 Sending to AI...")
+            try:
+                response = await self._gateway.send_message(text)
+            except Exception as e:
+                logger.error(f"Gateway error: {e}")
+                if self.config.play_emotions:
+                    await self._play_emotion("sad")
+                return
 
-        logger.info(f"Assistant: {response}")
+        logger.info(f"💬 Response: \"{response}\"")
 
         # Speak response
         self.state = InterfaceState.SPEAKING
+        logger.info("🔊 Speaking response...")
         await self._speak(response)
 
         # Return to idle
         self.state = InterfaceState.IDLE
+        logger.info("✅ Ready for next turn")
 
     async def _connect_reachy(self) -> None:
         """Connect to Reachy Mini robot."""
