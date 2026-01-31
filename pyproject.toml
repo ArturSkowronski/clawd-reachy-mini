@@ -1,0 +1,37 @@
+[project]
+name = "clawd-reachy-mini"
+version = "0.1.0"
+description = "Reachy Mini interface for OpenClaw - voice-based AI assistant channel"
+requires-python = ">=3.10"
+dependencies = [
+    "reachy-mini>=1.2.0",
+    "websockets>=12.0",
+    "openai-whisper>=20231117",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+local-stt = [
+    "faster-whisper>=1.0.0",
+]
+cloud-stt = [
+    "openai>=1.0",
+]
+
+[project.scripts]
+clawd-reachy = "clawd_reachy_mini.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clawd_reachy_mini"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
