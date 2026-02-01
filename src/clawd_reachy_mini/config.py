@@ -27,6 +27,7 @@ class Config:
     tts_voice: str | None = None
 
     # Audio settings
+    audio_device: str | None = None  # Specific audio input device name
     sample_rate: int = 16000
     silence_threshold: float = 0.01
     silence_duration: float = 1.5  # seconds of silence before processing
@@ -48,7 +49,7 @@ class Config:
         if not self.gateway_token:
             self.gateway_token = os.environ.get("OPENCLAW_TOKEN")
         if not self.openai_api_key:
-            self.openai_api_key = os.environ.get("OPENAI_API_KEY")
+            self.openai_api_key = os.environ.get("OPENCLAW_OPENAI_TOKEN") or os.environ.get("OPENAI_API_KEY")
 
     @property
     def gateway_url(self) -> str:

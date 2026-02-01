@@ -84,6 +84,12 @@ class ReachyInterface:
         self._running = True
         self.state = InterfaceState.IDLE
 
+        # Wake up the robot so it can move
+        if self._reachy:
+            logger.info("🦞 Waking up Reachy...")
+            await asyncio.to_thread(self._reachy.wake_up)
+            await asyncio.sleep(0.5)
+
         logger.info("✨ Reachy Mini interface started")
         logger.info("=" * 50)
         if self.config.wake_word:
@@ -92,9 +98,17 @@ class ReachyInterface:
             logger.info("Speak anytime - I'm always listening!")
         logger.info("=" * 50)
 
-        # Play startup animation
-        if self.config.play_emotions:
-            await self._play_emotion("happy")
+        # Play startup animation - snap claws!
+        # Note: antenna positions are in RADIANS (0.7 rad ≈ 40 degrees)
+        if self._reachy:
+            try:
+                self._reachy.set_target_antenna_joint_positions([0.7, -0.7])
+                await asyncio.sleep(0.2)
+                self._reachy.set_target_antenna_joint_positions([-0.7, 0.7])
+                await asyncio.sleep(0.2)
+                self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
+            except Exception as e:
+                logger.debug(f"Startup animation failed: {e}")
 
     async def stop(self) -> None:
         """Stop the interface."""
@@ -175,17 +189,28 @@ class ReachyInterface:
         # Check wake word if configured
         if self._wake_detector and not self._conversation_active:
             if not self._wake_detector.detect(text):
+                logger.info(f"⏳ Waiting for wake word \"{self.config.wake_word}\"...")
                 return
+            logger.info(f"✅ Wake word detected!")
+
+            # Quick lobster claw snap animation on activation (radians: 0.7 ≈ 40°)
+            if self._reachy:
+                logger.info("🦞 Playing wake-up claw snap!")
+                try:
+                    self._reachy.set_target_antenna_joint_positions([0.7, -0.7])
+                    await asyncio.sleep(0.2)
+                    self._reachy.set_target_antenna_joint_positions([-0.7, 0.7])
+                    await asyncio.sleep(0.2)
+                    self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
+                except Exception as e:
+                    logger.error(f"Antenna animation failed: {e}")
+
             # Remove wake word from text
             text = text.lower().replace(self.config.wake_word.lower(), "").strip()
             self._conversation_active = True
 
         if not text:
             return
-
-        # Show thinking animation
-        if self.config.play_emotions:
-            await self._play_emotion("thinking")
 
         # Get response - either from gateway or standalone echo
         if self.config.standalone_mode:
@@ -194,6 +219,13 @@ class ReachyInterface:
         else:
             # Send to OpenClaw and get response
             logger.info("🤖 Sending to AI...")
+
+            # Start lobster claw animation while waiting
+            animation_task = None
+            if self._reachy:
+                animation_task = asyncio.create_task(self._lobster_claw_animation())
+                await asyncio.sleep(0.1)  # Let animation start
+
             try:
                 response = await self._gateway.send_message(text)
             except Exception as e:
@@ -201,6 +233,20 @@ class ReachyInterface:
                 if self.config.play_emotions:
                     await self._play_emotion("sad")
                 return
+            finally:
+                # Stop animation
+                if animation_task:
+                    animation_task.cancel()
+                    try:
+                        await animation_task
+                    except asyncio.CancelledError:
+                        pass
+                    # Reset antennas to neutral (0 radians = center)
+                    if self._reachy:
+                        try:
+                            self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
+                        except Exception:
+                            pass
 
         logger.info(f"💬 Response: \"{response}\"")
 
@@ -237,14 +283,91 @@ class ReachyInterface:
             self._reachy = None
 
     async def _speak(self, text: str) -> None:
-        """Speak text through Reachy Mini."""
-        if self._reachy and hasattr(self._reachy, "say"):
-            try:
-                await asyncio.to_thread(self._reachy.say, text=text)
-            except Exception as e:
-                logger.error(f"TTS failed: {e}")
-        else:
-            # Fallback: print to console
+        """Speak text through Reachy Mini using edge-tts."""
+        import tempfile
+        import edge_tts
+
+        # Clean up markdown formatting for speech
+        clean_text = text.replace("**", "").replace("*", "").replace("`", "")
+
+        try:
+            # Generate speech with edge-tts
+            communicate = edge_tts.Communicate(clean_text, "en-US-GuyNeural")
+
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                temp_path = f.name
+
+            await communicate.save(temp_path)
+
+            # Play through Reachy Mini if available
+            if self._reachy and hasattr(self._reachy, "media"):
+                try:
+                    # Convert mp3 to wav for Reachy
+                    import subprocess
+                    wav_path = temp_path.replace(".mp3", ".wav")
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", temp_path, "-ar", "16000", "-ac", "1", wav_path],
+                        capture_output=True,
+                        check=True
+                    )
+
+                    # Play the audio
+                    import wave
+                    import numpy as np
+                    with wave.open(wav_path, "rb") as wf:
+                        audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                        audio_float = audio_data.astype(np.float32) / 32768.0
+
+                    self._reachy.media.start_playing()
+                    # Push audio in chunks with proper timing
+                    sample_rate = 16000
+                    chunk_size = 1600  # 100ms chunks
+                    chunk_duration = chunk_size / sample_rate
+
+                    # Start speaking animation in background
+                    speak_animation_task = asyncio.create_task(
+                        self._speak_animation(len(audio_float) / sample_rate)
+                    )
+
+                    # Push audio chunks
+                    total_chunks = len(audio_float) // chunk_size
+                    logger.info(f"🦞 Speaking with {total_chunks} chunks...")
+
+                    for i in range(0, len(audio_float), chunk_size):
+                        chunk = audio_float[i:i+chunk_size]
+                        self._reachy.media.push_audio_sample(chunk)
+                        await asyncio.sleep(chunk_duration * 0.9)
+
+                    # Stop animation and reset
+                    speak_animation_task.cancel()
+                    try:
+                        await speak_animation_task
+                    except asyncio.CancelledError:
+                        pass
+                    logger.info("🦞 Speech done, resetting claws")
+                    self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
+                    await asyncio.sleep(0.5)
+                    self._reachy.media.stop_playing()
+
+                    # Cleanup
+                    import os
+                    os.unlink(wav_path)
+                except Exception as e:
+                    logger.error(f"Reachy TTS playback failed: {e}")
+                    # Fallback: play locally
+                    import subprocess
+                    subprocess.run(["afplay", temp_path], capture_output=True)
+            else:
+                # Fallback: play locally on Mac
+                import subprocess
+                subprocess.run(["afplay", temp_path], capture_output=True)
+
+            # Cleanup
+            import os
+            os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"TTS failed: {e}")
             logger.info(f"[TTS] {text}")
 
     async def _play_emotion(self, emotion: str) -> None:
@@ -254,6 +377,54 @@ class ReachyInterface:
                 await asyncio.to_thread(self._reachy.play_emotion, emotion)
             except Exception as e:
                 logger.debug(f"Emotion playback failed: {e}")
+
+    async def _speak_animation(self, duration: float) -> None:
+        """Animate head bobbing while speaking to simulate talking."""
+        if not self._reachy:
+            return
+
+        from reachy_mini.utils import create_head_pose
+
+        logger.info(f"🗣️ Starting head bob animation for {duration:.1f}s")
+        bob_state = 0
+        try:
+            while True:
+                # Small head nods to simulate talking
+                if bob_state == 0:
+                    pose = create_head_pose(pitch=3, degrees=True)
+                    bob_state = 1
+                else:
+                    pose = create_head_pose(pitch=-3, degrees=True)
+                    bob_state = 0
+                self._reachy.set_target_head_pose(pose)
+                await asyncio.sleep(0.25)
+        except asyncio.CancelledError:
+            # Reset head to neutral
+            try:
+                self._reachy.set_target_head_pose(create_head_pose(pitch=0, degrees=True))
+            except Exception:
+                pass
+            logger.info("🗣️ Head bob animation stopped")
+            raise
+
+    async def _lobster_claw_animation(self) -> None:
+        """Animate antennas like lobster claws while thinking (positions in radians: 0.7 ≈ 40°)."""
+        if not self._reachy:
+            logger.warning("No Reachy for animation")
+            return
+
+        logger.info("🦞 Starting thinking claw animation...")
+        try:
+            while True:
+                # Claws open
+                self._reachy.set_target_antenna_joint_positions([0.7, -0.7])
+                await asyncio.sleep(0.35)
+                # Claws close
+                self._reachy.set_target_antenna_joint_positions([-0.7, 0.7])
+                await asyncio.sleep(0.35)
+        except asyncio.CancelledError:
+            logger.info("🦞 Claw animation stopped")
+            raise
 
     async def _idle_animation_loop(self) -> None:
         """Play subtle idle animations when not in conversation."""

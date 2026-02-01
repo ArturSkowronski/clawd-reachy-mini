@@ -31,15 +31,45 @@ class AudioCapture:
         self.reachy = reachy_mini
         self._running = False
         self._buffer: deque[np.ndarray] = deque(maxlen=1000)
+        self._device_id = None
+
+        # Find the specified audio device
+        if config.audio_device:
+            self._device_id = self._find_device(config.audio_device)
+
+    def _find_device(self, device_name: str) -> int | None:
+        """Find audio device by name."""
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            for i, d in enumerate(devices):
+                if device_name.lower() in d['name'].lower() and d['max_input_channels'] > 0:
+                    logger.info(f"🎙️ Using audio device: {d['name']} (index {i})")
+                    return i
+            logger.warning(f"Audio device '{device_name}' not found, using default")
+            return None
+        except Exception as e:
+            logger.error(f"Error finding audio device: {e}")
+            return None
 
     async def start(self) -> None:
         """Start audio capture."""
         self._running = True
-        logger.info("Audio capture started")
+        if self._device_id is not None:
+            logger.info(f"Audio capture started (device: {self.config.audio_device}, id: {self._device_id})")
+        else:
+            logger.info("Audio capture started (using default device)")
+            # Log available devices for debugging
+            try:
+                import sounddevice as sd
+                logger.info(f"Default input device: {sd.query_devices(kind='input')['name']}")
+            except Exception:
+                pass
 
     async def stop(self) -> None:
         """Stop audio capture."""
         self._running = False
+        self._close_input_stream()
         logger.info("Audio capture stopped")
 
     async def capture_utterance(self) -> np.ndarray | None:
@@ -60,14 +90,17 @@ class AudioCapture:
         energy_samples = []
 
         try:
-            # Start recording on Reachy Mini if available
-            if self.reachy and hasattr(self.reachy, "media"):
+            # Start recording on Reachy Mini if available (skip if using custom device)
+            if self._device_id is None and self.reachy and hasattr(self.reachy, "media"):
                 self.reachy.media.start_recording()
                 logger.debug("Started Reachy Mini audio recording")
 
             while self._running and len(frames) < max_frames:
-                # Get audio from Reachy Mini's media manager
-                if self.reachy and hasattr(self.reachy, "media"):
+                # Use specified audio device if configured
+                if self._device_id is not None:
+                    chunk = await self._read_local_mic(1024)
+                # Otherwise use Reachy Mini's media manager
+                elif self.reachy and hasattr(self.reachy, "media"):
                     chunk = await asyncio.to_thread(
                         self.reachy.media.get_audio_sample
                     )
@@ -87,10 +120,11 @@ class AudioCapture:
                 energy = np.abs(chunk).mean()
                 energy_samples.append(energy)
 
-                # Log energy level periodically (every ~1 second)
-                if len(energy_samples) % 16 == 0:
-                    avg_energy = np.mean(energy_samples[-16:])
-                    logger.debug(f"Audio energy: {avg_energy:.4f} (threshold: {self.config.silence_threshold})")
+                # Log energy level periodically (every ~2 seconds)
+                if len(energy_samples) % 32 == 0:
+                    avg_energy = np.mean(energy_samples[-32:])
+                    max_energy = np.max(energy_samples[-32:])
+                    logger.info(f"🎚️ Audio: avg={avg_energy:.4f}, max={max_energy:.4f} (threshold: {self.config.silence_threshold})")
 
                 if energy > self.config.silence_threshold:
                     if not speech_detected:
@@ -113,8 +147,8 @@ class AudioCapture:
             logger.error(f"Error capturing audio: {e}")
             return None
         finally:
-            # Stop recording on Reachy Mini
-            if self.reachy and hasattr(self.reachy, "media"):
+            # Stop recording on Reachy Mini (skip if using custom device)
+            if self._device_id is None and self.reachy and hasattr(self.reachy, "media"):
                 try:
                     self.reachy.media.stop_recording()
                 except Exception:
@@ -125,7 +159,8 @@ class AudioCapture:
 
         # Concatenate all frames
         audio = np.concatenate(frames)
-        logger.debug(f"Captured utterance: {len(audio) / self.config.sample_rate:.2f}s")
+        duration = len(audio) / self.config.sample_rate
+        logger.info(f"📼 Captured {duration:.2f}s of audio ({len(frames)} chunks, {len(audio)} samples)")
         return audio
 
     async def _read_local_mic(self, frames: int) -> np.ndarray | None:
@@ -133,14 +168,23 @@ class AudioCapture:
         try:
             import sounddevice as sd
 
-            recording = sd.rec(
-                frames,
-                samplerate=self.config.sample_rate,
-                channels=1,
-                dtype=np.float32,
-            )
-            sd.wait()
-            return recording.flatten()
+            # Use blocking read with InputStream for better performance
+            if not hasattr(self, '_input_stream') or self._input_stream is None:
+                self._input_stream = sd.InputStream(
+                    samplerate=self.config.sample_rate,
+                    channels=1,
+                    dtype=np.float32,
+                    device=self._device_id,
+                    blocksize=frames,
+                )
+                self._input_stream.start()
+                logger.debug(f"Started audio input stream on device {self._device_id}")
+
+            # Read available data
+            data, overflowed = self._input_stream.read(frames)
+            if overflowed:
+                logger.warning("Audio buffer overflow - some audio was lost")
+            return data.flatten()
 
         except ImportError:
             logger.warning("sounddevice not available for local mic")
@@ -148,6 +192,16 @@ class AudioCapture:
         except Exception as e:
             logger.error(f"Error reading local mic: {e}")
             return None
+
+    def _close_input_stream(self):
+        """Close the input stream if open."""
+        if hasattr(self, '_input_stream') and self._input_stream is not None:
+            try:
+                self._input_stream.stop()
+                self._input_stream.close()
+            except Exception:
+                pass
+            self._input_stream = None
 
 
 class WakeWordDetector:

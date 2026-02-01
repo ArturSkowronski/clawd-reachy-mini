@@ -74,6 +74,12 @@ def parse_args() -> argparse.Namespace:
         help="Whisper model size",
     )
 
+    # Audio options
+    parser.add_argument(
+        "--audio-device",
+        help="Audio input device name (e.g., 'RØDE NT-USB Mini')",
+    )
+
     # Behavior options
     parser.add_argument(
         "--wake-word",
@@ -114,6 +120,7 @@ def create_config(args: argparse.Namespace) -> Config:
         config.gateway_token = args.gateway_token
 
     config.reachy_connection_mode = args.reachy_mode
+    config.audio_device = args.audio_device
     config.stt_backend = args.stt
     config.whisper_model = args.whisper_model
     config.wake_word = args.wake_word

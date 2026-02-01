@@ -117,15 +117,15 @@ class GatewayClient:
 
         message_id = str(uuid.uuid4())
 
-        # Use OpenClaw protocol format: req/res with agent.run method
+        # Use OpenClaw protocol format: req/res with chat.send method
         request = {
             "type": "req",
             "id": message_id,
-            "method": "agent.run",
+            "method": "chat.send",
             "params": {
-                "prompt": text,
-                "session": "agent:main:reachy-mini",  # Session key for this device
-                "stream": False,
+                "message": text,
+                "sessionKey": f"reachy-mini:{self._session_id}",
+                "idempotencyKey": message_id,
             },
         }
 
@@ -133,24 +133,42 @@ class GatewayClient:
             # Include image as attachment
             request["params"]["attachments"] = [{"type": "image", "path": image_path}]
 
-        # Create future for response
-        response_future: asyncio.Future[dict] = asyncio.Future()
-        self._response_handlers[message_id] = response_future
+        # Create future for the initial response (runId)
+        init_future: asyncio.Future[dict] = asyncio.Future()
+        self._response_handlers[message_id] = init_future
 
         await self._send_raw(request)
 
+        run_id = None
         try:
-            # Wait for response with timeout
-            response = await asyncio.wait_for(response_future, timeout=120.0)
-            # Extract text from response payload
-            if isinstance(response, dict):
-                return response.get("text", response.get("content", str(response)))
-            return str(response)
+            # Wait for initial response with runId
+            init_response = await asyncio.wait_for(init_future, timeout=30.0)
+            run_id = init_response.get("runId")
+
+            if not run_id:
+                # Direct response without async run
+                return init_response.get("text", init_response.get("content", str(init_response)))
+
+            logger.debug(f"Chat run started: {run_id}")
+
+            # Create handler dict to accumulate text and store future
+            result_future: asyncio.Future[str] = asyncio.Future()
+            self._response_handlers[run_id] = {
+                "future": result_future,
+                "text": "",
+            }
+
+            # Wait for the AI to complete
+            result = await asyncio.wait_for(result_future, timeout=120.0)
+            return result
+
         except asyncio.TimeoutError:
             logger.error("Timeout waiting for Gateway response")
             raise
         finally:
             self._response_handlers.pop(message_id, None)
+            if run_id:
+                self._response_handlers.pop(run_id, None)
 
     async def stream_message(
         self,
@@ -357,6 +375,62 @@ class GatewayClient:
             self._authenticated = False
             if self._auth_event:
                 self._auth_event.set()
+
+        elif event_name == "agent":
+            # Agent events contain the AI response
+            run_id = payload.get("runId")
+            stream_type = payload.get("stream")
+            data = payload.get("data", {})
+
+            if stream_type == "lifecycle":
+                phase = data.get("phase")
+                if phase == "end":
+                    # Run completed - get final text from accumulated response
+                    logger.debug(f"Agent run {run_id} completed")
+                    # The final text should have been accumulated
+                    if run_id and run_id in self._response_handlers:
+                        handler = self._response_handlers.get(run_id)
+                        if isinstance(handler, dict):
+                            # We stored accumulated text in a dict
+                            final_text = handler.get("text", "")
+                            future = handler.get("future")
+                            if future and not future.done():
+                                future.set_result(final_text)
+                            self._response_handlers.pop(run_id, None)
+
+            elif stream_type == "assistant":
+                # Streaming text from assistant
+                text = data.get("text", "")  # Accumulated text
+                if run_id and run_id in self._response_handlers:
+                    handler = self._response_handlers[run_id]
+                    if isinstance(handler, dict):
+                        handler["text"] = text  # Update accumulated text
+
+        elif event_name == "chat":
+            # Chat state updates
+            run_id = payload.get("runId")
+            state = payload.get("state")
+            message = payload.get("message", {})
+
+            if state == "complete":
+                # Chat completed
+                content = message.get("content", [])
+                text = ""
+                for item in content:
+                    if item.get("type") == "text":
+                        text = item.get("text", "")
+                        break
+
+                logger.debug(f"Chat complete for {run_id}: {text[:100] if text else '(empty)'}...")
+
+                if run_id and run_id in self._response_handlers:
+                    handler = self._response_handlers.pop(run_id)
+                    if isinstance(handler, dict):
+                        future = handler.get("future")
+                        if future and not future.done():
+                            future.set_result(text)
+                    elif isinstance(handler, asyncio.Future) and not handler.done():
+                        handler.set_result(text)
 
         else:
             logger.debug(f"Unhandled event: {event_name}")

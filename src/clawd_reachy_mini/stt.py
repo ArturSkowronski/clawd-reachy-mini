@@ -138,11 +138,14 @@ class OpenAISTT(STTBackend):
 
     def transcribe_file(self, path: Path) -> str:
         client = self._get_client()
+        logger.info("☁️ Sending audio to OpenAI Cloud Whisper...")
         with open(path, "rb") as f:
             response = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f,
+                language="en",  # Force English transcription
             )
+        logger.info("☁️ OpenAI transcription complete")
         return response.text.strip()
 
 
@@ -151,12 +154,15 @@ def create_stt_backend(config: Config) -> STTBackend:
     backend = config.stt_backend.lower()
 
     if backend == "whisper":
+        logger.info(f"Using local Whisper STT (model: {config.whisper_model})")
         return WhisperSTT(model_name=config.whisper_model)
     elif backend == "faster-whisper":
+        logger.info(f"Using local Faster-Whisper STT (model: {config.whisper_model})")
         return FasterWhisperSTT(model_name=config.whisper_model)
     elif backend == "openai":
         if not config.openai_api_key:
             raise ValueError("OpenAI API key required for OpenAI STT backend")
+        logger.info("☁️ Using OpenAI Cloud Whisper STT")
         return OpenAISTT(api_key=config.openai_api_key)
     else:
         raise ValueError(f"Unknown STT backend: {backend}")
