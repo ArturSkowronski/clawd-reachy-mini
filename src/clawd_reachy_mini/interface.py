@@ -191,7 +191,7 @@ class ReachyInterface:
             if not self._wake_detector.detect(text):
                 logger.info(f"⏳ Waiting for wake word \"{self.config.wake_word}\"...")
                 return
-            logger.info(f"✅ Wake word detected!")
+            logger.info("✅ Wake word detected!")
 
             # Quick lobster claw snap animation on activation (radians: 0.7 ≈ 40°)
             if self._reachy:
@@ -344,7 +344,7 @@ class ReachyInterface:
                         await speak_animation_task
                     except asyncio.CancelledError:
                         pass
-                    logger.info("🦞 Speech done, resetting claws")
+                    logger.info("🗣️ Speech done, resetting head")
                     self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
                     await asyncio.sleep(0.5)
                     self._reachy.media.stop_playing()
