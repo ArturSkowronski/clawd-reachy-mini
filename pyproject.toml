@@ -15,6 +15,13 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
+audio = [
+    "sounddevice>=0.4.6",
+    "edge-tts>=6.1.0",
+]
+vision = [
+    "reachy-mini[vision]",
+]
 local-stt = [
     "faster-whisper>=1.0.0",
 ]

@@ -1,5 +1,5 @@
 [project]
-name = "clawd-reachy-mini"
+name = "clawd-reachy-mini-skill"
 version = "0.1.0"
 description = "OpenClaw skill for Reachy Mini robot integration"
 requires-python = ">=3.10"
