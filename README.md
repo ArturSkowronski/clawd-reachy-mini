@@ -53,21 +53,26 @@ The system operates on a client-server architecture:
 
 2.  **Install the package**:
     ```bash
-    pip install .
-    # OR for development
-    pip install -e ".[dev]"
+    uv sync
+    # OR with dev dependencies
+    uv sync --extra dev
     ```
 
 3.  **Install Optional Dependencies**:
-    *   For local speech recognition: `pip install ".[local-stt]"`
-    *   For vision support: `pip install ".[vision]"`
+    *   For local speech recognition: `uv sync --extra local-stt`
+    *   For cloud speech recognition (OpenAI): `uv sync --extra cloud-stt`
+
+4.  **Run the app**:
+    ```bash
+    uv run clawd-reachy --gateway-host <YOUR_GATEWAY_IP>
+    ```
 
 ## Usage
 
 Run the client to connect your Reachy Mini to OpenClaw:
 
 ```bash
-clawd-reachy --gateway-host <YOUR_GATEWAY_IP>
+uv run clawd-reachy --gateway-host <YOUR_GATEWAY_IP>
 ```
 
 ### Configuration Options
@@ -81,7 +86,7 @@ clawd-reachy --gateway-host <YOUR_GATEWAY_IP>
 ### Example
 
 ```bash
-clawd-reachy --gateway-host 192.168.1.100 --wake-word "Hey Reachy" --stt faster-whisper
+uv run clawd-reachy --gateway-host 192.168.1.100 --wake-word "Hey Reachy" --stt faster-whisper
 ```
 
 ## How It Works (Internal Flow)

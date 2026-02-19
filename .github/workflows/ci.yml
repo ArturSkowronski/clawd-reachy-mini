@@ -21,6 +21,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -28,21 +31,18 @@ jobs:
 
     - name: Install dependencies (Main App)
       run: |
-        python -m pip install --upgrade pip
-        pip install ".[dev]"
-        pip install ruff
+        uv sync --extra dev
 
     - name: Lint with Ruff
       run: |
-        pip install ruff
-        ruff check .
+        uv tool run ruff check .
 
     - name: Install dependencies (Action Skill)
       run: |
         cd action-skill
-        pip install ".[dev]"
+        uv sync --extra dev
 
     - name: Test Action Skill
       run: |
         cd action-skill
-        pytest
+        uv run pytest
