@@ -60,6 +60,8 @@ The system operates on a client-server architecture:
 
 3.  **Install Optional Dependencies**:
     *   For local speech recognition: `pip install ".[local-stt]"`
+    *   For audio I/O and TTS (local mic + edge-tts): `pip install ".[audio]"`
+    *   For cloud speech recognition (OpenAI): `pip install ".[cloud-stt]"`
     *   For vision support: `pip install ".[vision]"`
 
 ## Usage
