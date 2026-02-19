@@ -23,7 +23,7 @@ class Config:
     whisper_model: str = "base"  # "tiny", "base", "small", "medium", "large"
     openai_api_key: str | None = None
 
-    # Text-to-speech (uses Reachy's built-in TTS)
+    # Text-to-speech
     tts_voice: str | None = None
 
     # Audio settings

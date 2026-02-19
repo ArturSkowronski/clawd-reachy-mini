@@ -91,7 +91,7 @@ uv sync --extra dev
 
 - local faster transcription: `uv sync --extra local-stt`
 - OpenAI cloud transcription: `uv sync --extra cloud-stt`
-- local mic + TTS deps: `uv sync --extra audio`
+- local mic deps: `uv sync --extra audio`
 - Reachy vision extras: `uv sync --extra vision`
 
 ### Install the action skill package
@@ -147,6 +147,12 @@ uv run clawd-reachy \
 - `WHISPER_MODEL`: default Whisper model
 - `WAKE_WORD`: default wake word
 - `OPENCLAW_OPENAI_TOKEN` or `OPENAI_API_KEY`: used for `--stt openai`
+
+ElevenLabs TTS:
+- `REACHY_ELEVENLABS_API_KEY` or `ELEVENLABS_API_KEY` (required for speech)
+- `REACHY_ELEVENLABS_VOICE_ID` or `ELEVENLABS_VOICE_ID` (optional, default: `JBFqnCBsd6RMkjVDRZzb`)
+- `REACHY_ELEVENLABS_MODEL_ID` or `ELEVENLABS_MODEL_ID` (optional, default: `eleven_multilingual_v2`)
+- `REACHY_ELEVENLABS_OUTPUT_FORMAT` or `ELEVENLABS_OUTPUT_FORMAT` (optional, default: `mp3_44100_128`)
 
 ## OpenClaw Skill (`action-skill/`)
 

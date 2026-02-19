@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
+import subprocess
+import tempfile
 from enum import Enum, auto
+
+import numpy as np
 
 from clawd_reachy_mini.audio import AudioCapture, WakeWordDetector
 from clawd_reachy_mini.config import Config
+from clawd_reachy_mini.elevenlabs import (
+    elevenlabs_tts_to_temp_audio_file,
+    load_elevenlabs_config,
+)
 from clawd_reachy_mini.gateway import GatewayClient
 from clawd_reachy_mini.stt import STTBackend, create_stt_backend
 
@@ -283,38 +292,47 @@ class ReachyInterface:
             self._reachy = None
 
     async def _speak(self, text: str) -> None:
-        """Speak text through Reachy Mini using edge-tts."""
-        import tempfile
-        import edge_tts
+        """Speak text through Reachy Mini using ElevenLabs TTS."""
 
         # Clean up markdown formatting for speech
         clean_text = text.replace("**", "").replace("*", "").replace("`", "")
+        temp_audio_path: str | None = None
+        temp_wav_path: str | None = None
 
         try:
-            # Generate speech with edge-tts
-            communicate = edge_tts.Communicate(clean_text, "en-US-GuyNeural")
-
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                temp_path = f.name
-
-            await communicate.save(temp_path)
+            tts_cfg = load_elevenlabs_config()
+            logger.info("☁️ Generating speech with ElevenLabs...")
+            temp_audio_path = await elevenlabs_tts_to_temp_audio_file(
+                text=clean_text,
+                config=tts_cfg,
+                voice_settings={"use_speaker_boost": True},
+            )
 
             # Play through Reachy Mini if available
             if self._reachy and hasattr(self._reachy, "media"):
                 try:
-                    # Convert mp3 to wav for Reachy
-                    import subprocess
-                    wav_path = temp_path.replace(".mp3", ".wav")
+                    # Convert generated audio to 16k mono wav for Reachy
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wf:
+                        temp_wav_path = wf.name
                     subprocess.run(
-                        ["ffmpeg", "-y", "-i", temp_path, "-ar", "16000", "-ac", "1", wav_path],
+                        [
+                            "ffmpeg",
+                            "-y",
+                            "-i",
+                            temp_audio_path,
+                            "-ar",
+                            "16000",
+                            "-ac",
+                            "1",
+                            temp_wav_path,
+                        ],
                         capture_output=True,
-                        check=True
+                        check=True,
                     )
 
                     # Play the audio
                     import wave
-                    import numpy as np
-                    with wave.open(wav_path, "rb") as wf:
+                    with wave.open(temp_wav_path, "rb") as wf:
                         audio_data = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
                         audio_float = audio_data.astype(np.float32) / 32768.0
 
@@ -348,27 +366,29 @@ class ReachyInterface:
                     self._reachy.set_target_antenna_joint_positions([0.0, 0.0])
                     await asyncio.sleep(0.5)
                     self._reachy.media.stop_playing()
-
-                    # Cleanup
-                    import os
-                    os.unlink(wav_path)
                 except Exception as e:
                     logger.error(f"Reachy TTS playback failed: {e}")
                     # Fallback: play locally
-                    import subprocess
-                    subprocess.run(["afplay", temp_path], capture_output=True)
+                    subprocess.run(["afplay", temp_audio_path], capture_output=True)
             else:
                 # Fallback: play locally on Mac
-                import subprocess
-                subprocess.run(["afplay", temp_path], capture_output=True)
-
-            # Cleanup
-            import os
-            os.unlink(temp_path)
-
+                subprocess.run(["afplay", temp_audio_path], capture_output=True)
+        except ValueError as e:
+            logger.error(f"ElevenLabs TTS configuration error: {e}")
+            logger.info(
+                "Set REACHY_ELEVENLABS_API_KEY or ELEVENLABS_API_KEY to enable speech."
+            )
+            logger.info(f"[TTS] {text}")
         except Exception as e:
             logger.error(f"TTS failed: {e}")
             logger.info(f"[TTS] {text}")
+        finally:
+            for path in (temp_wav_path, temp_audio_path):
+                if path:
+                    try:
+                        os.unlink(path)
+                    except FileNotFoundError:
+                        pass
 
     async def _play_emotion(self, emotion: str) -> None:
         """Play emotion animation on Reachy Mini."""
