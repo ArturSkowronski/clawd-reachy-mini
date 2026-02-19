@@ -1,101 +1,173 @@
 # Clawd Reachy Mini
 
-This project provides a voice-controlled interface for the [Reachy Mini](https://pollen-robotics.com/reachy-mini/) robot, acting as a client for the **OpenClaw** AI system.
+Voice interface that connects a Reachy Mini robot to OpenClaw over WebSocket.
 
-It allows Reachy Mini to function as an embodied agent that can see, hear, speak, and move based on intelligence provided by OpenClaw.
+[![CI](https://github.com/ArturSkowronski/clawd-reachy-mini/actions/workflows/ci.yml/badge.svg)](https://github.com/ArturSkowronski/clawd-reachy-mini/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Robot-Reachy Mini](https://img.shields.io/badge/robot-Reachy%20Mini-orange.svg)](https://www.pollen-robotics.com/reachy-mini/)
 
-## About OpenClaw & Clawd
+This project runs a conversation loop on a machine connected to Reachy Mini:
 
-**OpenClaw** (formerly known as *Clawdbot*) is an open-source autonomous AI personal assistant project designed to automate complex digital tasks and maintain persistent context.
+1. capture microphone audio
+2. transcribe speech (Whisper, Faster-Whisper, or OpenAI)
+3. send text to OpenClaw Gateway
+4. receive AI response
+5. speak response and animate the robot
 
-*   **Clawd** refers to the specific persona or instance of the AI assistant (often powered by Anthropic's Claude models) that this robot interface is designed to embody.
-*   **The Goal**: By connecting Reachy Mini to OpenClaw, we extend the assistant's capabilities from the digital realm (managing emails, calendars, code) into the physical world (gestures, vision, physical presence).
+## Quickstart
 
-## Architecture
+```bash
+git clone https://github.com/ArturSkowronski/clawd-reachy-mini.git
+cd clawd-reachy-mini
+pip install -e ".[dev,audio]"
+clawd-reachy --gateway-host 127.0.0.1
+```
 
-The system operates on a client-server architecture:
+Standalone mode (no gateway, echoes what it heard):
 
-1.  **Robot Client (`src/clawd_reachy_mini`)**:
-    *   Runs locally on the computer connected to the Reachy Mini.
-    *   **Audio I/O**: Captures user speech via microphone and plays TTS responses.
-    *   **STT (Speech-to-Text)**: Transcribes audio locally (using Whisper) or via cloud API before sending to the Gateway.
-    *   **Robot Control**: Directly interfaces with the Reachy Mini hardware (USB/Network) to control motors, lights, and read sensors.
-    *   **Gateway Client**: Maintains a WebSocket connection to the OpenClaw Gateway.
+```bash
+clawd-reachy --standalone
+```
 
-2.  **OpenClaw Gateway (Server)**:
-    *   The central AI brain (LLM).
-    *   Receives text input from the robot.
-    *   Processes the input and determines the appropriate response (speech) or action (tool call).
-    *   Sends commands back to the robot client.
+Robot demo mode:
 
-3.  **Skill Definition (`action-skill/`)**:
-    *   Defines the capabilities (Tools) available to the AI, such as "Move Head", "Dance", "Capture Image".
-    *   These definitions tell OpenClaw what the robot can do.
+```bash
+clawd-reachy --demo
+```
 
-## Folder Structure
+## How It Works
 
-*   `src/clawd_reachy_mini/`: Main application code.
-    *   `main.py`: Entry point and configuration.
-    *   `interface.py`: Manages the interaction loop (Listen -> Transcribe -> Send -> Speak).
-    *   `gateway.py`: Handles WebSocket communication with OpenClaw.
-    *   `bridge.py`: (In `action-skill` but used by tools) Low-level robot control logic.
-    *   `audio.py` & `stt.py`: Audio capture and transcription.
-*   `action-skill/`: The "Skill" package for OpenClaw.
-    *   `SKILL.md`: Documentation of available tools for the LLM.
-    *   `src/clawd_reachy_mini/tools.py`: Python implementation of the tools.
+```text
+Mic/Reachy Media -> STT -> OpenClaw Gateway -> text response -> TTS + Reachy motion
+```
+
+Main modules:
+
+- `src/clawd_reachy_mini/main.py`: CLI entrypoint and runtime wiring
+- `src/clawd_reachy_mini/interface.py`: conversation loop and robot behavior
+- `src/clawd_reachy_mini/gateway.py`: OpenClaw protocol + websocket client
+- `src/clawd_reachy_mini/audio.py`: utterance capture and silence detection
+- `src/clawd_reachy_mini/stt.py`: STT backend implementations
+- `action-skill/`: OpenClaw skill package/tool wrappers
 
 ## Installation
 
-1.  **Prerequisites**:
-    *   Python 3.10+
-    *   Reachy Mini SDK (`reachy-mini`)
-    *   `ffmpeg` (for audio processing)
+### Prerequisites
 
-2.  **Install the package**:
-    ```bash
-    pip install .
-    # OR for development
-    pip install -e ".[dev]"
-    ```
+- Python 3.10+
+- Reachy Mini SDK (`reachy-mini`)
+- `ffmpeg` (required for mp3->wav conversion before Reachy playback)
+- macOS `afplay` is used as local playback fallback
 
-3.  **Install Optional Dependencies**:
-    *   For local speech recognition: `pip install ".[local-stt]"`
-    *   For audio I/O and TTS (local mic + edge-tts): `pip install ".[audio]"`
-    *   For cloud speech recognition (OpenAI): `pip install ".[cloud-stt]"`
-    *   For vision support: `pip install ".[vision]"`
+### Install the main app
+
+```bash
+pip install .
+```
+
+Development install:
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Optional extras (main app)
+
+- local faster transcription: `pip install -e ".[local-stt]"`
+- OpenAI cloud transcription: `pip install -e ".[cloud-stt]"`
+- local mic + TTS deps: `pip install -e ".[audio]"`
+- Reachy vision extras: `pip install -e ".[vision]"`
+
+### Install the action skill package
+
+```bash
+cd action-skill
+pip install -e ".[dev]"
+```
+
+Published package name for the skill is `clawd-reachy-mini-skill`.
 
 ## Usage
 
-Run the client to connect your Reachy Mini to OpenClaw:
+### Basic
 
 ```bash
-clawd-reachy --gateway-host <YOUR_GATEWAY_IP>
+clawd-reachy --gateway-host <GATEWAY_IP>
 ```
 
-### Configuration Options
-
-*   `--gateway-host`: Hostname/IP of the OpenClaw Gateway (default: 127.0.0.1).
-*   `--gateway-port`: Port of the Gateway (default: 18789).
-*   `--reachy-mode`: Connection mode for the robot (`auto`, `localhost_only`, `network`).
-*   `--stt`: Speech-to-text backend (`whisper`, `faster-whisper`, `openai`).
-*   `--wake-word`: Optional wake word to trigger listening (e.g., "Hey Reachy").
-
-### Example
+Example:
 
 ```bash
-clawd-reachy --gateway-host 192.168.1.100 --wake-word "Hey Reachy" --stt faster-whisper
+clawd-reachy \
+  --gateway-host 192.168.1.100 \
+  --gateway-port 18789 \
+  --stt faster-whisper \
+  --whisper-model base \
+  --wake-word "hey reachy"
 ```
 
-## How It Works (Internal Flow)
+### CLI options
 
-1.  **Startup**: The `ReachyInterface` connects to the robot and the OpenClaw Gateway via WebSocket.
-2.  **Listening**: The system listens for audio. If a wake word is configured, it waits for that phrase.
-3.  **Transcription**: Speech is converted to text using the configured STT backend (e.g., Whisper).
-4.  **Gateway Request**: The text is sent to OpenClaw as a `message.send` event.
-5.  **AI Processing**: OpenClaw processes the text.
-    *   If it's a conversational reply, it sends back text.
-    *   If it requires an action (e.g., "raise your hand"), it sends a `tool.request`.
-6.  **Action/Response**:
-    *   **Text**: The robot speaks the response using its TTS engine.
-    *   **Tool**: The client executes the requested robot command (e.g., `reachy_move_head`). *Note: Tool execution integration is currently in progress.*
-7.  **Loop**: The system returns to the listening state.
+- `--gateway-host`: OpenClaw host (default: `127.0.0.1`)
+- `--gateway-port`: OpenClaw port (default: `18789`)
+- `--gateway-token`: bearer token for gateway auth
+- `--reachy-mode`: `auto|localhost_only|network`
+- `--stt`: `whisper|faster-whisper|openai`
+- `--whisper-model`: `tiny|base|small|medium|large`
+- `--audio-device`: input device name for local mic capture
+- `--wake-word`: activate only after wake phrase is detected
+- `--no-emotions`: disable emotion animations on errors/responses
+- `--no-idle`: disable idle motion loop
+- `--standalone`: run without gateway (local echo behavior)
+- `--demo`: run a short direct robot movement demo and exit
+- `-v, --verbose`: debug logs
+
+## Environment Variables
+
+- `OPENCLAW_HOST`: default gateway host override
+- `OPENCLAW_PORT`: default gateway port override
+- `OPENCLAW_TOKEN`: default gateway token
+- `STT_BACKEND`: default STT backend (`whisper`, `faster-whisper`, `openai`)
+- `WHISPER_MODEL`: default Whisper model
+- `WAKE_WORD`: default wake word
+- `OPENCLAW_OPENAI_TOKEN` or `OPENAI_API_KEY`: used for `--stt openai`
+
+## OpenClaw Skill (`action-skill/`)
+
+The action skill provides tool wrappers for robot control:
+
+- connect/disconnect
+- head movement
+- antenna movement
+- emotions and dance
+- image capture
+- robot speech
+- status checks
+
+Skill docs: `action-skill/SKILL.md`.
+
+## Current Limitations
+
+- Gateway-originated `tool.request` handling in the main app is currently a placeholder and returns an error from `src/clawd_reachy_mini/gateway.py`.
+- Root CI currently runs lint for the main app and tests only for `action-skill/tests`.
+- Local fallback playback uses `afplay` (macOS-specific).
+
+## Development
+
+From repo root:
+
+```bash
+pip install -e ".[dev]"
+pip install ruff
+ruff check .
+```
+
+Action skill tests:
+
+```bash
+cd action-skill
+pip install -e ".[dev]"
+pytest
+```
+
+GitHub Actions CI runs on Python 3.10 and 3.11.
