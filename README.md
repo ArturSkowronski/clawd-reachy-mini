@@ -4,7 +4,23 @@ Voice interface that connects a Reachy Mini robot to OpenClaw over WebSocket.
 
 [![CI](https://github.com/ArturSkowronski/clawd-reachy-mini/actions/workflows/ci.yml/badge.svg)](https://github.com/ArturSkowronski/clawd-reachy-mini/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Robot-Reachy Mini](https://img.shields.io/badge/robot-Reachy%20Mini-orange.svg)](https://www.pollen-robotics.com/reachy-mini/)
+[![Reachy Mini](https://img.shields.io/badge/robot-Reachy%20Mini-orange.svg)](https://www.pollen-robotics.com/reachy-mini/)
+
+<table style="border: none;">
+<tr style="border: none;">
+<td style="width: 42%; vertical-align: middle; border: none;">
+  <img src="media/cover.png" alt="Reachy Mini" />
+</td>
+<td style="vertical-align: middle; border: none;">
+<b>Quickstart</b>
+<pre><code>uv sync --extra dev --extra audio
+uv run clawd-reachy --gateway-host 127.0.0.1</code></pre>
+<b>Standalone demo</b>
+<pre><code>uv sync --extra dev --extra audio
+uv run clawd-reachy --standalone</code></pre>
+</td>
+</tr>
+</table>
 
 This project runs a conversation loop on a machine connected to Reachy Mini:
 
