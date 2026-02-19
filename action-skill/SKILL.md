@@ -13,7 +13,7 @@ This skill enables OpenClaw to interact with a Reachy Mini robot, allowing you t
 ## Setup
 
 1. Connect your Reachy Mini via USB (Lite) or ensure it's on the same network (Wireless)
-2. Install dependencies: `uv pip install clawd-reachy-mini`
+2. Install dependencies: `uv pip install clawd-reachy-mini-skill`
 3. The skill auto-discovers the robot on first use
 
 ## Tools
@@ -70,6 +70,6 @@ Get the current status of the robot (connection state, position, etc.).
 ## Notes
 
 - The robot must be powered on and connected before using movement commands
-- Camera features require the `vision` extra: `pip install clawd-reachy-mini[vision]`
-- Audio features require the `audio` extra: `pip install clawd-reachy-mini[audio]`
+- Camera features require the `vision` extra: `pip install clawd-reachy-mini-skill[vision]`
+- Audio features require the `audio` extra: `pip install clawd-reachy-mini-skill[audio]`
 - macOS is supported for USB connections; WebRTC streaming is Linux-only
